@@ -1,0 +1,744 @@
+---
+title: "FluSight Baseline adapted to our ARIMAX ensembles manuscript"
+author: "Victor Felix"
+date: "2025-11-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(readr)
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(checkmate)
+library(cli)
+library(epidatr)
+library(epiprocess)
+library(epipredict)
+library(ggplot2)
+library(plotly)
+library(pak)
+library(scoringutils)
+library(covidHubUtils)
+
+```
+
+This code is based on the CDC FluSight baseline: https://github.com/cdcepi/Flusight-baseline
+
+We adapted the code so it use the same data that we used on our ARIMAX ensembles manuscript
+
+```{r}
+##############################
+## Configuration parameters ##
+##############################
+#userid <- Sys.info()["user"]
+#output_dirpath <- paste0("C:/Users/",userid,"/Desktop/GitHub/Flusight-baseline/weekly-submission/forecasts/Flusight-baseline/")
+#cat_ouput_dir <- paste0("C:/Users/",userid,"/Desktop/GitHub/FluSight-forecast-hub/model-output/FluSight-equal_cat/")
+
+output_dirpath <- "weekly-submission/forecasts/Flusight-baseline/"
+cat_output_dir <- "weekly-submission/forecasts/Flusight-equal_cat/"
+
+######################
+## Helper functions ##
+######################
+
+#' Return `date` if it has the desired weekday, else the next date that does
+#' @param date `Date` vector
+#' @param ltwday integerish vector; of weekday code(s), following POSIXlt
+#'   encoding (not `lubridate`'s), but allowing either 0 or 7 to represent
+#'   Sunday.
+#' @return `Date` object
+curr_else_next_date_with_ltwday <- function(date, ltwday) {
+  assert_class(date, "Date")
+  assert_integerish(ltwday, lower = 0L, upper = 7L)
+  #
+  date + (ltwday - as.POSIXlt(date)$wday) %% 7L
+}
+
+location_abbr_dictionary <-
+  state_census %>%
+  # convert fips to character if using old version of `state_census`:
+  mutate(fips = if (is.numeric(fips)) sprintf("%02d", fips) else fips) %>%
+  transmute(
+    location = case_match(fips, "00" ~ "US", .default = fips),
+    abbr
+  )
+
+location_to_abbr <- function(location) {
+  location_abbr_dictionary$abbr[match(location, location_abbr_dictionary$location)]
+}
+
+abbr_to_location <- function(abbr) {
+  location_abbr_dictionary$location[match(abbr, location_abbr_dictionary$abbr)]
+}
+
+
+###############################
+## Fetch, prepare input data ##
+###############################
+
+target_tbl_col_spec <- cols_only(
+  date = col_date(format = ""),
+  location = col_character(),
+  location_name = col_character(),
+  value = col_double(),
+  weekly_rate = col_double()
+)
+# (Reading in below tables with this col_spec may produce a message about
+# renaming `` -> `...1` referencing the unnamed column containing row "names"
+# (numbers), but cols_only will immediately drop it.)
+
+# Final version of old-form (<= 2024) reporting:
+#target_tbl_old_form <-
+#  target_tbl <- readr::read_csv(
+#    "https://raw.githubusercontent.com/cdcepi/FluSight-forecast-hub/04e884dce942dd3b8766aee3d8ff1c333b4fb6fa/target-data/target-hospital-admissions.csv",
+#    col_types = target_tbl_col_spec
+#  )
+
+# Latest version of new-form (>=2024) reporting mirrored at cdcepi/FluSight-forecast-hub@main:
+target_tbl_new_form <- readr::read_csv(
+  "https://raw.githubusercontent.com/cdcepi/FluSight-forecast-hub/main/target-data/target-hospital-admissions.csv",
+  col_types = target_tbl_col_spec
+)
+```
+
+The FluSight Models uses a dataset base on HHS influenza hospitalizations which are available online: "target_tbl_new_form". To make sure we are forecasting with the same data we will replace these with the HHS data we used on our ARIMA models. They should be basically the same, but they may have minor revisions, so it is better to do this.
+
+```{r}
+
+# Load HHS influenza hospitalizations that we used on our ARIMA models
+
+hospitalizations_from_ARIMA_models<-read_csv("treated_influenza_hosp_dataframe_v2.csv")
+
+# Transform to a format that will work on the FluSight
+
+hospitalizations_from_ARIMA_models <- hospitalizations_from_ARIMA_models %>%
+  rename(
+    location_name = state_name,
+    wrong_location_name = location,
+    value = cases,
+    date = target_end_date
+  )%>%
+  select(-c(...1,abbreviation))
+
+# Make a dictionary of location and location_names, which are basically what we need to correct for the final dataset
+
+correct_location_dictionary <- target_tbl_new_form %>%
+  select(location_name, location) %>%
+  distinct() %>%            # keep only unique rows
+  rename(correct_location = location)
+
+# We do this slowly
+# We add the correct locations from the dictionary
+hospitalizations_from_ARIMA_models <- hospitalizations_from_ARIMA_models %>%
+  left_join(correct_location_dictionary, by = "location_name")
+
+# We remove the wrong locations names, and rename
+# the correct locations as simply location
+# we do this for consistency with the FluSight model
+
+hospitalizations_from_ARIMA_models <- hospitalizations_from_ARIMA_models %>%
+  mutate(location = correct_location) %>%  # overwrite old location
+  select(-correct_location, -wrong_location_name)  # remove extra columns if present
+```
+
+Let's name the dataset that we used on the ARIMA models as target_tbl_new_form so we don't change the FLuSight baseline model settings
+
+```{r}
+
+# Here we use the our HHS data with the correct dictionary for the Flusight Model
+target_tbl_new_form<-hospitalizations_from_ARIMA_models
+
+```
+
+The FluSight setup starts here.
+
+```{r}
+if (min(target_tbl_new_form$date) <= as.Date("2022-12-31")) {
+  # The new target table includes old time values spanning back pretty far; we
+  # don't need to fill in with old target table values.
+  target_tbl <- target_tbl_new_form
+} else {
+  # The new target table is missing a substantial time range from old-form
+  # reporting. Fill in with old-form reporting where possible. Leave a time gap
+  # between old-form and new-form reporting to prevent any jumps between the two
+  # in the training set for the one-ahead model for the baseline.
+  target_tbl <- bind_rows(
+    target_tbl_old_form %>% filter(date <= min(target_tbl_new_form$time_value) - 14L),
+    target_tbl_new_form
+  )
+}
+# We'll also filter out some early time values below when training the model.
+
+target_edf <- target_tbl %>%
+  transmute(
+    geo_value = location_to_abbr(location),
+    time_value = .data$date,
+    weekly_count = .data$value
+  ) %>%
+  as_epi_df()
+```
+
+Here we test the FluSight Baseline for a single date, later we run for all dates we need.
+
+```{r}
+# Implied date settings:
+forecast_as_of_date <- as.Date("2022-11-07")
+#forecast_as_of_date <- Sys.Date()
+reference_date <- curr_else_next_date_with_ltwday(forecast_as_of_date, 6L) # Saturday
+
+# Validation:
+desired_max_time_value <- reference_date - 7L
+
+
+########################## commented out ############################
+# * that we're not running too late:
+#max_time_value <- max(target_edf$time_value)
+#if (max_time_value > desired_max_time_value) {
+#  cli_abort("
+#    The target data run through a max time value of {max_time_value},
+#    but we were expecting them to run only through {desired_max_time_value}
+#    in order to make predictions at forecast date {forecast_as_of_date},
+#    reference date {reference_date}.
+#  ")
+#}
+############################# victor ###############################
+
+# * that data's not running too late / we're not running too early:
+excess_latency_tbl <- target_edf %>%
+  drop_na(weekly_count) %>%
+  group_by(geo_value) %>%
+  summarize(
+    max_time_value = max(time_value),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    excess_latency =
+      pmax(
+        as.integer(desired_max_time_value - max_time_value) %/% 7L,
+        0L
+      ),
+    has_excess_latency = excess_latency > 0L
+  )
+excess_latency_small_tbl <- excess_latency_tbl %>%
+  filter(has_excess_latency)
+
+prop_locs_overlatent_err_thresh <- 0.20
+prop_locs_overlatent <- mean(excess_latency_tbl$has_excess_latency)
+if (prop_locs_overlatent > prop_locs_overlatent_err_thresh) {
+  cli_abort("
+    More than {100*prop_locs_overlatent_err_thresh}% of locations have excess
+    latency. The reference date is {reference_date} so we desire observations at
+    least through {desired_max_time_value}. However,
+    {nrow(excess_latency_small_tbl)} location{?s} had excess latency and did not
+    have reporting through that date: {excess_latency_small_tbl$geo_value}.
+  ")
+} else if (prop_locs_overlatent > 0) {
+  cli_abort("
+    Some locations have excess latency. The reference date is {reference_date}
+    so we desire observations at least through {desired_max_time_value}.
+    However, {nrow(excess_latency_small_tbl)} location{?s} had excess latency
+    and did not have reporting through that date:
+    {excess_latency_small_tbl$geo_value}.
+  ")
+}
+
+######################
+## Prepare baseline ##
+######################
+
+imposed_min_time_value <- as.Date("2022-08-06") # 2022EW31 Sat
+#
+# ^ For seasons through 2023/2024, this was instead 2021-12-04. For 2024/2025,
+# it has been updated to exclude the low activity during 2021/2022. EW31 was
+# selected as a boundary between 2021/2022 and 2022/2023 to nearly-evenly divide
+# up off-season weeks and to include the full 2022/2023 season ramp-up, though
+# this also includes more flat off-season weeks.
+
+pause_min_time_value <- as.Date("2024-04-27") + 7L # Sat
+pause_max_time_value <- as.Date("2024-11-09") - 7L # Sat
+
+n_output_trajectories <- 100L
+
+# For reproducibility, run with a particular RNG configuration. Make seed the
+# same for all runs for the same `reference_date`, but different for different
+# `reference_date`s. (It's probably not necessary to change seeds between
+# `reference_date`s, though, since we use a large number of simulations so even
+# if we sample the same quantile level trajectories, it won't be noticeable. The
+# `%% 1e9` is also not necessary unless more seed-setting dependencies are added
+# that would take us beyond R's integer max value.)
+rng_seed <- as.integer((59460707 + as.numeric(reference_date)) %% 2e9)
+withr::with_rng_version("4.0.0", withr::with_seed(rng_seed, {
+  # Temporary approach to grab trajectory samples from epipredict without
+  # requiring epipredict update:
+  subsamples_by_geo <- list()
+  trace(epipredict:::propagate_samples, exit = quote({
+    n <- 1L
+    e <- rlang::caller_env(n)
+    while(! ".data" %in% names(e)) {
+      n <- n + 1L
+      e <- rlang::caller_env(n)
+      if (identical(e, globalenv()) || identical(e, emptyenv())) {
+        cli::cli_abort("Failed to find the target geo_value to attach to this trajectory sample.")
+      }
+    }
+    target_geo <- e$.data$geo_value
+    sample_by_horizon <- res
+    # sample_by_horizon is sorted by horizon 0 draws, so we can't just take the
+    # first n_output_trajectories of them; subsample instead:
+    selected_trajectory_inds <- sample.int(length(sample_by_horizon[[1L]]), n_output_trajectories)
+    subsample_by_horizon <- lapply(sample_by_horizon, `[`, selected_trajectory_inds)
+    # Ensure non-negative:
+    subsample_by_horizon <- lapply(subsample_by_horizon, pmax, 0L)
+    # Prepare sample ids; the ith draw for each of the horizons belong to the
+    # same sample, so they should have the same sample id; sampling is performed
+    # separately for each geo, so different geos should have different sets of
+    # ids:
+    subsample_ids_every_horizon <- paste0(target_geo, "_s", seq_len(n_output_trajectories))
+    subsample <- tibble(
+      geo_value = target_geo,
+      horizon = seq_along(subsample_by_horizon) - 1L,
+      output_type_id = rep(list(subsample_ids_every_horizon), length(horizon)),
+      value = subsample_by_horizon
+    ) %>%
+      unchop(c(output_type_id, value))
+    .GlobalEnv[["subsamples_by_geo"]] <- c(.GlobalEnv[["subsamples_by_geo"]], list(subsample))
+  }))
+  #
+  # Forecasts for all but the -1 horizon, in `epipredict`'s forecast output
+  # format. We will want to edit some of the labeling and add horizon -1, so we
+  # won't use this directly.
+  fcst <- cdc_baseline_forecaster(
+    target_edf %>%
+      filter(time_value >= imposed_min_time_value) %>%
+      filter(!between(time_value, pause_min_time_value, pause_max_time_value)) %>%
+      # Don't use interim/preliminary data past the `desired_max_time_value`
+      # (shouldn't do anything if we raised an error earlier on about
+      # unexpectedly low latency):
+      filter(time_value <= desired_max_time_value),
+    "weekly_count",
+    cdc_baseline_args_list(
+      # The `aheads` are specified relative to the most recent available
+      # `time_value` available. Since our `data_frequency` is 1 week (the
+      # default), the aheads are in terms of weeks.
+      aheads = 1:4,
+      nsims = 1e5,
+      # (defaults for everything else)
+    )
+  )
+  # Extract the predictions in `epipredict` format, and add horizon -1
+  # predictions:
+  preds <- fcst$predictions %>%
+    # epipredict infers a "`forecast_date`" equal to, and indexes aheads
+    # relative to, the max `time_value` available, which is off from the
+    # labeling we want due to data latency, but gives us the desired model and
+    # `target_dates`. Instead, let the `forecast_date` be the `reference_date`
+    # and index aheads relative to it:
+    mutate(
+      forecast_date = .env$reference_date,
+      ahead = as.integer(.data$target_date - .env$reference_date) %/% 7L
+    ) %>%
+    bind_rows(
+      # Prepare -1 horizon predictions:
+      target_edf %>%
+        # Pretend that excess latency, either in the form of missing rows or
+        # NAs, doesn't exist; the last available week will be treated as if it
+        # ended on `desired_max_time_value`:
+        drop_na(weekly_count) %>%
+        slice_max(time_value) %>%
+        transmute(
+          # Like in the preceding rows of `preds`, we will let `forecast_date`
+          # be the `reference_date` and index aheads relative to it:
+          forecast_date = .env$reference_date,
+          target_date = .env$reference_date - 7L,
+          ahead = -1L,
+          geo_value,
+          .pred = weekly_count,
+          # Degenerate (deterministic) distributions:
+          .pred_distn = dist_quantiles(
+            values = map(
+              weekly_count, rep,
+              length(cdc_baseline_args_list()$quantile_levels)
+            ),
+            quantile_levels = cdc_baseline_args_list()$quantile_levels
+          )
+        )
+    )
+}))
+
+subsamples <- subsamples_by_geo %>%
+  bind_rows() %>%
+  mutate(reference_date = .env$reference_date,
+         target_date = reference_date + 7L * horizon) %>%
+  mutate(value = round(value)) # currently inconsistent with quantile preds not rounding
+
+##########
+## Plot ##
+##########
+
+preds_wide <- pivot_quantiles_wider(preds, .pred_distn)
+plot_states <- sort(unique(target_edf$geo_value))
+plot_ncol <- 3L
+plot_ntraj <- 10L
+plt <-
+  preds_wide %>%
+  filter(geo_value %in% plot_states) %>%
+  mutate(geo_value = factor(geo_value, plot_states)) %>%
+  arrange(geo_value) %>%
+  ggplot(aes(target_date)) +
+  geom_ribbon(aes(ymin = `0.1`, ymax = `0.9`), fill = blues9[3]) +
+  geom_ribbon(aes(ymin = `0.25`, ymax = `0.75`), fill = blues9[6]) +
+  geom_line(aes(y = .pred), color = "orange") +
+  geom_line(
+    data = target_edf %>%
+      filter(geo_value %in% plot_states) %>%
+      mutate(geo_value = factor(geo_value, plot_states)) %>%
+      arrange(geo_value),
+    aes(x = time_value, y = weekly_count)
+  ) +
+  geom_line(
+    data = subsamples %>% slice_head(n = plot_ntraj, by = c(geo_value, horizon)),
+    aes(y = value, group = output_type_id),
+    alpha = 0.1
+  ) +
+  scale_x_date(limits = c(reference_date - 120, reference_date + 30)) +
+  labs(x = "Date", y = "Weekly admissions") +
+  facet_wrap(~geo_value, scales = "free_y", ncol = plot_ncol) +
+  # (as.numeric is workaround for
+  # https://stackoverflow.com/questions/55150087/ggplotly-fails-with-geom-vline-with-xintercept-date-value)
+  geom_vline(xintercept = as.numeric(desired_max_time_value), linetype = "dotted") +
+  geom_vline(xintercept = as.numeric(forecast_as_of_date), linetype = "dotdash") +
+  geom_vline(xintercept = as.numeric(reference_date), linetype = "dashed") +
+  theme_bw()
+ggplotly(plt, height = 400 * length(plot_states) / plot_ncol)
+
+#plt
+```
+
+Function to run the FluSight Baseline in parallel for the two seasons
+
+```{r}
+######################################################
+# Set the dates as the ones from the ARIMA forecasts #
+######################################################
+
+
+forecast_dates<-c("2022-10-22","2022-10-29", "2022-11-05" ,"2022-11-12", "2022-11-19", "2022-11-26", "2022-12-03", "2022-12-10", "2022-12-17" ,"2022-12-24" ,"2022-12-31","2023-01-07", "2023-01-14" ,"2023-01-21", "2023-01-28" ,"2023-02-04", "2023-02-11", "2023-02-18" ,"2023-02-25", "2023-03-04" ,"2023-03-11", "2023-03-18" ,"2023-03-25" ,"2023-04-01", "2023-04-08", "2023-04-15","2023-04-22", "2023-04-29", "2023-05-06", "2023-05-13" ,"2023-05-20","2023-09-14","2023-09-23","2023-09-30", "2023-10-07","2023-10-14" ,"2023-10-21" ,"2023-10-28", "2023-11-04","2023-11-11", "2023-11-18", "2023-11-25", "2023-12-02", "2023-12-09","2023-12-16", "2023-12-23", "2023-12-30" ,"2024-01-06", "2024-01-13","2024-01-20", "2024-01-27" ,"2024-02-03", "2024-02-10" ,"2024-02-17","2024-02-24" ,"2024-03-02", "2024-03-09", "2024-03-16", "2024-03-23","2024-03-30", "2024-04-06", "2024-04-13", "2024-04-20", "2024-04-27","2024-05-04", "2024-05-11","2024-05-18" )
+
+# Initialize list to store results
+all_flusight_preds_list <- list()
+
+# Loop over dates
+for(i in seq_along(forecast_dates)) {
+  
+  set.seed(27)
+  
+  forecast_as_of_date <- forecast_dates[i]
+  
+  forecast_as_of_date <- as.Date(forecast_as_of_date, origin = "1970-01-01")
+  reference_date <- curr_else_next_date_with_ltwday(forecast_as_of_date, 6L) # Saturday
+  
+  # Validation:
+  desired_max_time_value <- reference_date - 7L
+  
+  
+  ########################## commented out ############################
+  # * that we're not running too late:
+  #max_time_value <- max(target_edf$time_value)
+  #if (max_time_value > desired_max_time_value) {
+  #  cli_abort("
+  #    The target data run through a max time value of {max_time_value},
+  #    but we were expecting them to run only through {desired_max_time_value}
+  #    in order to make predictions at forecast date {forecast_as_of_date},
+  #    reference date {reference_date}.
+  #  ")
+  #}
+  ############################# victor ###############################
+  
+  # * that data's not running too late / we're not running too early:
+  excess_latency_tbl <- target_edf %>%
+    drop_na(weekly_count) %>%
+    group_by(geo_value) %>%
+    summarize(
+      max_time_value = max(time_value),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      excess_latency =
+        pmax(
+          as.integer(desired_max_time_value - max_time_value) %/% 7L,
+          0L
+        ),
+      has_excess_latency = excess_latency > 0L
+    )
+  excess_latency_small_tbl <- excess_latency_tbl %>%
+    filter(has_excess_latency)
+  
+  prop_locs_overlatent_err_thresh <- 0.20
+  prop_locs_overlatent <- mean(excess_latency_tbl$has_excess_latency)
+  if (prop_locs_overlatent > prop_locs_overlatent_err_thresh) {
+    cli_abort("
+      More than {100*prop_locs_overlatent_err_thresh}% of locations have excess
+      latency. The reference date is {reference_date} so we desire observations at
+      least through {desired_max_time_value}. However,
+      {nrow(excess_latency_small_tbl)} location{?s} had excess latency and did not
+      have reporting through that date: {excess_latency_small_tbl$geo_value}.
+    ")
+  } else if (prop_locs_overlatent > 0) {
+    cli_abort("
+      Some locations have excess latency. The reference date is {reference_date}
+      so we desire observations at least through {desired_max_time_value}.
+      However, {nrow(excess_latency_small_tbl)} location{?s} had excess latency
+      and did not have reporting through that date:
+      {excess_latency_small_tbl$geo_value}.
+    ")
+  }
+  
+  ######################
+  ## Prepare baseline ##
+  ######################
+  
+  imposed_min_time_value <- as.Date("2022-08-06") # 2022EW31 Sat
+  #
+  # ^ For seasons through 2023/2024, this was instead 2021-12-04. For 2024/2025,
+  # it has been updated to exclude the low activity during 2021/2022. EW31 was
+  # selected as a boundary between 2021/2022 and 2022/2023 to nearly-evenly divide
+  # up off-season weeks and to include the full 2022/2023 season ramp-up, though
+  # this also includes more flat off-season weeks.
+  
+  pause_min_time_value <- as.Date("2024-04-27") + 7L # Sat
+  pause_max_time_value <- as.Date("2024-11-09") - 7L # Sat
+  
+  n_output_trajectories <- 100L
+  
+  # For reproducibility, run with a particular RNG configuration. Make seed the
+  # same for all runs for the same `reference_date`, but different for different
+  # `reference_date`s. (It's probably not necessary to change seeds between
+  # `reference_date`s, though, since we use a large number of simulations so even
+  # if we sample the same quantile level trajectories, it won't be noticeable. The
+  # `%% 1e9` is also not necessary unless more seed-setting dependencies are added
+  # that would take us beyond R's integer max value.)
+  rng_seed <- as.integer((59460707 + as.numeric(reference_date)) %% 2e9)
+  withr::with_rng_version("4.0.0", withr::with_seed(rng_seed, {
+    # Temporary approach to grab trajectory samples from epipredict without
+    # requiring epipredict update:
+    subsamples_by_geo <- list()
+    trace(epipredict:::propagate_samples, exit = quote({
+      n <- 1L
+      e <- rlang::caller_env(n)
+      while(! ".data" %in% names(e)) {
+        n <- n + 1L
+        e <- rlang::caller_env(n)
+        if (identical(e, globalenv()) || identical(e, emptyenv())) {
+          cli::cli_abort("Failed to find the target geo_value to attach to this trajectory sample.")
+        }
+      }
+      target_geo <- e$.data$geo_value
+      sample_by_horizon <- res
+      # sample_by_horizon is sorted by horizon 0 draws, so we can't just take the
+      # first n_output_trajectories of them; subsample instead:
+      selected_trajectory_inds <- sample.int(length(sample_by_horizon[[1L]]), n_output_trajectories)
+      subsample_by_horizon <- lapply(sample_by_horizon, `[`, selected_trajectory_inds)
+      # Ensure non-negative:
+      subsample_by_horizon <- lapply(subsample_by_horizon, pmax, 0L)
+      # Prepare sample ids; the ith draw for each of the horizons belong to the
+      # same sample, so they should have the same sample id; sampling is performed
+      # separately for each geo, so different geos should have different sets of
+      # ids:
+      subsample_ids_every_horizon <- paste0(target_geo, "_s", seq_len(n_output_trajectories))
+      subsample <- tibble(
+        geo_value = target_geo,
+        horizon = seq_along(subsample_by_horizon) - 1L,
+        output_type_id = rep(list(subsample_ids_every_horizon), length(horizon)),
+        value = subsample_by_horizon
+      ) %>%
+        unchop(c(output_type_id, value))
+      .GlobalEnv[["subsamples_by_geo"]] <- c(.GlobalEnv[["subsamples_by_geo"]], list(subsample))
+    }))
+    #
+    # Forecasts for all but the -1 horizon, in `epipredict`'s forecast output
+    # format. We will want to edit some of the labeling and add horizon -1, so we
+    # won't use this directly.
+    fcst <- cdc_baseline_forecaster(
+      target_edf %>%
+        filter(time_value >= imposed_min_time_value) %>%
+        filter(!between(time_value, pause_min_time_value, pause_max_time_value)) %>%
+        # Don't use interim/preliminary data past the `desired_max_time_value`
+        # (shouldn't do anything if we raised an error earlier on about
+        # unexpectedly low latency):
+        filter(time_value <= desired_max_time_value),
+      "weekly_count",
+      cdc_baseline_args_list(
+        # The `aheads` are specified relative to the most recent available
+        # `time_value` available. Since our `data_frequency` is 1 week (the
+        # default), the aheads are in terms of weeks.
+        aheads = 1:4,
+        nsims = 1e5,
+        # (defaults for everything else)
+      )
+    )
+    # Extract the predictions in `epipredict` format, and add horizon -1
+    # predictions:
+    preds <- fcst$predictions %>%
+      # epipredict infers a "`forecast_date`" equal to, and indexes aheads
+      # relative to, the max `time_value` available, which is off from the
+      # labeling we want due to data latency, but gives us the desired model and
+      # `target_dates`. Instead, let the `forecast_date` be the `reference_date`
+      # and index aheads relative to it:
+      mutate(
+        forecast_date = .env$reference_date,
+        ahead = as.integer(.data$target_date - .env$reference_date) %/% 7L
+      ) %>%
+      bind_rows(
+        # Prepare -1 horizon predictions:
+        target_edf %>%
+          # Pretend that excess latency, either in the form of missing rows or
+          # NAs, doesn't exist; the last available week will be treated as if it
+          # ended on `desired_max_time_value`:
+          drop_na(weekly_count) %>%
+          slice_max(time_value) %>%
+          transmute(
+            # Like in the preceding rows of `preds`, we will let `forecast_date`
+            # be the `reference_date` and index aheads relative to it:
+            forecast_date = .env$reference_date,
+            target_date = .env$reference_date - 7L,
+            ahead = -1L,
+            geo_value,
+            .pred = weekly_count,
+            # Degenerate (deterministic) distributions:
+            .pred_distn = dist_quantiles(
+              values = map(
+                weekly_count, rep,
+                length(cdc_baseline_args_list()$quantile_levels)
+              ),
+              quantile_levels = cdc_baseline_args_list()$quantile_levels
+            )
+          )
+      )
+  }))
+  
+  subsamples <- subsamples_by_geo %>%
+    bind_rows() %>%
+    mutate(reference_date = .env$reference_date,
+           target_date = reference_date + 7L * horizon) %>%
+    mutate(value = round(value)) # currently inconsistent with quantile preds not rounding
+  
+  ################
+  ## Preds_wide ##
+  ################
+  
+  preds_wide <- pivot_quantiles_wider(preds, .pred_distn)
+
+  # Save result in list
+  all_flusight_preds_list[[i]] <- preds_wide
+}
+
+```
+
+Combine all results into a single data frame
+
+```{r}
+all_flusight_preds_df <- bind_rows(all_flusight_preds_list)
+```
+
+Function to format the all_preds_df dataset to a way that we can evaluate with WIS.
+
+```{r}
+quantiles_forecasts <- all_flusight_preds_df %>%
+  pivot_longer(
+    cols = matches("^\\d"), 
+    names_to = "quantile", 
+    values_to = "value"
+  ) %>%
+  left_join(location_abbr_dictionary, by = c("geo_value" = "abbr")) %>%
+  relocate(location, .before = geo_value) %>%  # move 'location' to front
+  select(-geo_value)                            # drop geo_value
+
+quantiles_forecasts <- quantiles_forecasts %>%
+  mutate(
+    model = "FluSight",
+    target = "wk ahead inc flu hosp",
+    temporal_resolution = "wk",
+    target_variable = "hosp",
+    type = "quantile"
+  )
+
+# clean quantiles forecasts
+quantiles_forecasts <- quantiles_forecasts %>%
+  select(-.pred) %>%        # remove the .pred column
+  rename(horizon = ahead)   # rename 'ahead' → 'horizon'
+
+# create point forecasts for WIS calculation
+point_forecasts <- quantiles_forecasts %>%
+  filter(quantile == 0.5) %>%
+  mutate(
+    type = "point",
+    quantile = NA
+  )
+
+# final dataset needed for WIS calculation
+flusight_forecasts <- bind_rows(quantiles_forecasts, point_forecasts) %>%
+  rename(target_end_date = target_date)%>%
+  mutate(quantile = as.numeric(quantile))%>%
+  filter(horizon != -1)
+```
+
+Adapting observations for computing WIS
+
+```{r}
+# use the truth from the same HHS dataset that we used for the ARIMA models
+
+truth <- target_tbl_new_form %>%
+  rename(target_end_date = date)%>%
+  mutate(
+    target_variable = "hosp",
+    model= "FluSight"
+  )
+```
+
+Evaluate WIS
+
+```{r}
+# Evaluate WIS based on truth and flusight baseline forecasts
+my_forecast_scores<-score_forecasts(flusight_forecasts, truth) 
+
+head(my_forecast_scores)
+
+```
+
+Some more cleaning on the scored forecasts so we can evaluate WIS comparing with the ARIMAX models later
+
+```{r}
+
+# load the states codes from the Arima models
+states_codes<-read_csv("State_Codes.csv")
+states_codes$abbreviation <- tolower(states_codes$abbreviation)
+
+# STATE names need to be as the ARIMA models
+wis_by_STATE <- my_forecast_scores %>%
+  left_join(location_abbr_dictionary, by = "location") %>%
+  mutate(location = abbr) %>%
+  select(-abbr) %>%
+  left_join(states_codes, by = c("location" = "abbreviation")) %>%
+  mutate(STATE = location_name) %>%
+  select(-location_name)
+
+flusight_wis<-data.frame(wis_by_STATE$model,wis_by_STATE$STATE,
+wis_by_STATE$horizon,wis_by_STATE$target_end_date,
+wis_by_STATE$wis)
+```
+
+Save and export flusight_wis so we can use in further analysis
+
+```{r}
+# Save as CSV
+write.csv(flusight_wis, "../flusight_wis_final.csv", row.names = FALSE)
+
+```
+
+

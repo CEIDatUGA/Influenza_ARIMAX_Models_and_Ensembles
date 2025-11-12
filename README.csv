@@ -2,6 +2,8 @@
 
 This repository has 24 ARIMA and ARIMAX models which forecasts Influenza Hospitalizations in 48 states of the U.S. 
 
+It also includes a CDC FluSight baseline model adapted to our dataset.
+
 ########################################################################
 
 Our main folder has a Rmakdown (manuscript_results) that generates images and analysis for our 24 models.
@@ -36,4 +38,4 @@ Each folder also includes a Rmakrdown which process the NHSH hospitalizations da
 
 ###########################################################################
 
-[updated] 23Jun2025
+[updated] 11Nov2025
