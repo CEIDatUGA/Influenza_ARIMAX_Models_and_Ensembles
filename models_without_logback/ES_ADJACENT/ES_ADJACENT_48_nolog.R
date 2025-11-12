@@ -353,6 +353,11 @@ ROLLING_ARIMAX_ADJACENT <- function(current_state_tb, week_lag=week_lag, n_weeks
       probabilities <- c(0.01, 0.025, seq(0.05, 0.95, by = 0.05), 0.975, 0.99) 
       # get 23 predictive quantiles based on the mixture of gaussians 
       my_quantiles <- quantile(sims, probs=probabilities)
+
+      ############
+      # truncating quantiles
+      ############
+      my_quantiles <- pmax(my_quantiles, 0) # bound to values above 0
       
       ########################
       # Predictive quantiles #
@@ -383,43 +388,6 @@ ROLLING_ARIMAX_ADJACENT <- function(current_state_tb, week_lag=week_lag, n_weeks
   df_N_of_models<-data.frame(N_of_models) # save the number of models utilized in each forecast
   
   return(list("Point_ForeCast "=prediction, "Quantiles"=prediction_quantile, "Number_of_models"=df_N_of_models))
-}
-
-#' combining_states_data
-#'
-#' This function organizes the ILI dataset into a list of tibbles. Each tibble is a different U.S. state.
-#' It also get the dates based on the year and epidemiological week.
-#' 
-#' @param ILI_data A ILI dataset from ILInet.
-#' @param states_codes A dataset with codes and names which selects the U.S. states in a given order.
-#' 
-#' @return A list containing the forecast, predictive quantiles and number of models in each ensemble.
-#'
-
-combining_states_data<-function(ILI_data=NULL, state_codes=NULL){
-  
-  # select only the STATE, YEAR, EPI_WEEK, ILITOTAL columns from ILI data
-  ILI_data = subset(ILI_data, select = c(STATE,YEAR,EPI_WEEK,ILITOTAL))
-  # add a column with weekly dates
-  ILI_data<-cbind(ILI_data, MMWRweek2Date(MMWRyear=ILI_data$YEAR, MMWRweek=ILI_data$EPI_WEEK))
-  # select only location and location_name from state_codes
-  state_codes = subset(state_codes, select = c(location,location_name))
-  names(state_codes)<- c('STATE_NUMBER','STATE')
-  
-  # Joining datasets
-  combined_data <- ILI_data %>%
-    left_join(state_codes, by = "STATE")
-  
-  # Renaming, organizing variables types and removing NANs
-  names(combined_data)<- c('state_name','MMWRyear','MMWRweek','cases','target_end_date','location')
-  combined_data$location<-as.numeric(combined_data$location)
-  combined_data$cases<-suppressWarnings(as.numeric(combined_data$cases))
-  combined_data$target_end_date = as.Date(combined_data$target_end_date,format = "%Y/%m/%d")
-  combined_data<-drop_na(combined_data)
-  
-  # split into different states
-  states_data <-combined_data %>% group_split(location)
-  return(states_data)
 }
 
 #' FormatForWIS
