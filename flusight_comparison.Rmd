@@ -985,7 +985,57 @@ p_values_and_impr$Model_Type <- ifelse(grepl("_LB$", p_values_and_impr$Model), "
 head(p_values_and_impr)
 p_values_and_impr
 ```
+Here we are plotting the mean differences and standard deviation
 
+```{r}
+
+# Get model order based based on lower values on WeekAhead == 1  
+model_order <- p_values_and_impr %>%
+  filter(WeekAhead == 1) %>%
+  arrange(desc(m)) %>%
+  pull(Model) 
+
+# Prepare data with significance level, ordering, and model name
+p_df <- p_values_and_impr %>%
+  mutate(Significance = ifelse(p_values < 0.05 , "Significant", "Not Significant"),
+         Model_Type = ifelse(grepl("_LB$", Model), "With log-back transformation", "Without log-back transformation"),
+         Model = factor(Model, levels = model_order))  
+
+# Heatmap plot  
+plot_m_heatmap <- ggplot(p_df, aes(x = factor(WeekAhead), y = Model, fill = m)) +
+  geom_tile(aes(fill = ifelse(Significance == "Significant", m, NA)), color = "black") +  # Fill only significant ones
+  geom_tile(data = p_df %>% filter(Significance == "Not Significant"), 
+            aes(x = factor(WeekAhead), y = Model), fill = "gray80", color = "black") +  # Gray for non-significant
+  geom_text(aes(label = paste0("m:", round(m, 1),", sd:", round(sd, 1))), 
+            color = "black", size = 4) +  # Add text labels
+  scale_fill_gradient2(
+  low = "cyan", 
+  mid = "white", 
+  high = "red", 
+  midpoint = 0,     # <-- Sets 0 as the midpoint
+  na.value = "gray80", 
+  name = "Mean difference", 
+  limits = c(-35, 35)       
+)+
+  labs(title = "Mean differences between models' WIS and the FluSight baseline across 48 states",
+       subtitle = "Gray boxes indicate models that are not significantly different from the baseline (p>0.05)",
+         caption = "m = mean difference, sd = standard deviation",
+       x = "Target Week",
+       y = "") + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+  plot.caption = element_text(size = 16),
+    plot.title = element_text(size = 18, face = "bold"),
+    plot.subtitle = element_text(size = 14),) +
+  facet_wrap(~ Model_Type, scales = "free_y") 
+
+
+
+# Print plot
+print(plot_m_heatmap)
+ggsave("Fig12.jpg", plot_m_heatmap, width = 14, height = 7 )
+
+```
 
 Now let's organize the data to plot some maps with the best models.
 
@@ -1178,59 +1228,6 @@ print(combined_plot)
 # Save to file
 ggsave("Fig13.jpg", combined_plot, width =12, height =7)
 ```
-
-Here we are plotting the mean differences and standard deviation
-
-```{r}
-
-# Get model order based based on lower values on WeekAhead == 1  
-model_order <- p_values_and_impr %>%
-  filter(WeekAhead == 1) %>%
-  arrange(desc(m)) %>%
-  pull(Model) 
-
-# Prepare data with significance level, ordering, and model name
-p_df <- p_values_and_impr %>%
-  mutate(Significance = ifelse(p_values < 0.05 , "Significant", "Not Significant"),
-         Model_Type = ifelse(grepl("_LB$", Model), "With log-back transformation", "Without log-back transformation"),
-         Model = factor(Model, levels = model_order))  
-
-# Heatmap plot  
-plot_m_heatmap <- ggplot(p_df, aes(x = factor(WeekAhead), y = Model, fill = m)) +
-  geom_tile(aes(fill = ifelse(Significance == "Significant", m, NA)), color = "black") +  # Fill only significant ones
-  geom_tile(data = p_df %>% filter(Significance == "Not Significant"), 
-            aes(x = factor(WeekAhead), y = Model), fill = "gray80", color = "black") +  # Gray for non-significant
-  geom_text(aes(label = paste0("m:", round(m, 1),", sd:", round(sd, 1))), 
-            color = "black", size = 4) +  # Add text labels
-  scale_fill_gradient2(
-  low = "cyan", 
-  mid = "white", 
-  high = "red", 
-  midpoint = 0,     # <-- Sets 0 as the midpoint
-  na.value = "gray80", 
-  name = "Mean difference", 
-  limits = c(-35, 35)       
-)+
-  labs(title = "Mean differences between models' WIS and the FluSight baseline across 48 states",
-       subtitle = "Gray boxes indicate models that are not significantly different from the baseline (p>0.05)",
-         caption = "m = mean difference, sd = standard deviation",
-       x = "Target Week",
-       y = "") + 
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-  plot.caption = element_text(size = 16),
-    plot.title = element_text(size = 18, face = "bold"),
-    plot.subtitle = element_text(size = 14),) +
-  facet_wrap(~ Model_Type, scales = "free_y") 
-
-
-
-# Print plot
-print(plot_m_heatmap)
-ggsave("Fig15.jpg", plot_m_heatmap, width = 14, height = 7 )
-
-```
-
 
 Loading datasets for regression models analysis
 
