@@ -2798,7 +2798,7 @@ total_hospitalizations_by_week <- AUTO_ADJACENT_WEEK1 %>%
 # plotting results
 hospital_plot <-ggplot(total_hospitalizations_by_week, aes(x = target_end_date, y = mean_cases)) +
   geom_bar(stat = "identity",fill = "steelblue") +
-  labs(title = "B) Total influenza hospitalizations on the 48 states",
+  labs(title = "B) Total influenza hospitalizations in the 48 states",
        x = "",
        y = "Influenza hospitalizations") +
   scale_x_date(
