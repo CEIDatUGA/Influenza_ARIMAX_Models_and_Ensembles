@@ -301,6 +301,19 @@ head(filtered_df_W4_NoLg)
 
 ```
 
+Computing total weekly hospitalization to include in the plot bellow.
+
+```{r}
+hosp_by_date <- AUTO_ARIMA_WEEK1 %>%
+  group_by(target_end_date) %>%
+  summarise(total_hosp = sum(cases, na.rm = TRUE)) %>%
+  rename(Julian_date = target_end_date)
+
+hosp_by_date
+
+plot(hosp_by_date$Julian_date, hosp_by_date$total_hosp)
+```
+
 Weighted interval scores for each state and each target week.
 
 ```{r}
@@ -315,6 +328,14 @@ df_combined_ <- bind_rows(
   select(STATE, epiweek, AUTO_AR, Dataset, Julian_date) %>%
   rename(WIS = AUTO_AR)  # Rename for consistency
 
+
+#########
+
+df_combined_ <- df_combined_ %>%
+  left_join(hosp_by_date, by = "Julian_date")
+
+#########
+
 # Define the epiweek values to highlight
 highlight_weeks <- c(21, 41)
 
@@ -324,26 +345,52 @@ highlight_dates <- df_combined_ %>%
   select(epiweek, Julian_date) %>%
   distinct()
 
-# Plot
-plt0 <- ggplot(df_combined_, aes(x = Julian_date, y = WIS, group = STATE)) + 
-  geom_vline(data = highlight_dates, aes(xintercept = Julian_date), color = "red", linetype = "dashed", size = 1) +  
-  geom_line(color = "black", size = 0.1) +  
-  facet_wrap(~ Dataset, ncol = 2, scales = "free_y") +  
-  theme_minimal() +  
-  labs(title = "",#,
-       subtitle = "",
-       x = "", 
-       y = "WIS") +  
-  theme(axis.text.x = element_text(angle = 45, hjust = 1),
-        plot.title = element_text(size = 16, face = "bold"),
-        legend.position = "none") +
+sec_breaks<-seq(0, max(df_combined_$total_hosp), by=10000)
+
+plt0 <- ggplot(df_combined_, aes(x = Julian_date, y = WIS, group = STATE)) +
+  
+  geom_vline(
+    data = highlight_dates,
+    aes(xintercept = Julian_date),
+    color = "red",
+    linetype = "dashed",
+    size = 1
+  ) +
+  geom_line(color = "black", size = 0.15) +
+  facet_wrap(~ Dataset, ncol = 2) +
+  theme_minimal() +
+  labs(
+    x = "",
+    y = "WIS"
+  ) +
+    geom_line(
+    aes(y = total_hosp / 4),  
+    color = "blue",
+    size = 0.2,
+    linetype = "dashed"
+  ) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none",
+    axis.title.y.right = element_text(color = "blue"),
+    axis.text.y.right  = element_text(color = "blue"),
+    axis.ticks.y.right = element_line(color = "blue"),
+    panel.grid.major.x = element_blank(), 
+    panel.grid.minor =element_blank()
+  ) +
   scale_x_date(
     date_breaks = "1 month",
     date_labels = "%b %y"
-  ) # Format x-axis to show months and set monthly breaks
+  ) +
+  scale_y_continuous(
+    sec.axis = sec_axis(
+      ~ . * 4,
+      name = "Influenza-related hospitalizations"
+    )
+  )
 
 # Print the plot
-plt0
+plt0 
 
 ggsave(plt0, height = 5, width = 8, filename="Fig2.jpg")  
 ```
