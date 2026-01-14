@@ -1,5 +1,5 @@
 ---
-title: "EPIWEEK ARIMAX MODELS - with log-back transformations"
+title: "EPIWEEK ARIMAX MODELS - with log-back transformations - (correct exp)"
 author: "Victor Felix"
 date: "`r format(Sys.time(), '%B %d, %Y')`"
 output:
