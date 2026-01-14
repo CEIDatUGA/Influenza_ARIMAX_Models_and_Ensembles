@@ -70,7 +70,7 @@ ES_TEMPERATURE<-function(current_state_tb, week_lag=1, temperature_data=NULL, au
   all_cases<-data.frame(current_state_tb$cases, as.Date(current_state_tb$target_end_date)) # Get flu cases from current state
   colnames(all_cases)<-c("cases","Dates")
   # Format forecasts and dates 
-  all_forecasts<-data.frame(expm1(list_all_pred[[1]]$Prediction), as.Date(list_all_pred[[1]]$predicted_date)) # Get ensembled forecast from current state
+  all_forecasts<-data.frame(exp(list_all_pred[[1]]$Prediction), as.Date(list_all_pred[[1]]$predicted_date)) # Get ensembled forecast from current state
   colnames(all_forecasts)<-c("forecasts","Dates")
   # Join flu cases and forecasts 
   forecasts_and_cases<-inner_join(all_forecasts,all_cases, by="Dates") # Join cases and forecasts
@@ -90,7 +90,7 @@ ES_TEMPERATURE<-function(current_state_tb, week_lag=1, temperature_data=NULL, au
     # Extract the date (name of the data frame) and the quantiles
     date <- names(list_all_pred_quantiles[[1]][i])
     quantiles <- t(list_all_pred_quantiles[[1]][[i]][2])
-    quantiles<-expm1(quantiles)
+    quantiles<-exp(quantiles)
     # Create a temporary data frame with the quantiles and date
     temp_df <- data.frame(date = date, quantiles)
     # Bind the temporary data frame to the final data frame
@@ -385,11 +385,11 @@ FormatForWIS <- function(list_all_pred_quantiles, current_state_tb, model_name, 
       # Add rows with predictions to the tibble as point_forecast
       my_tibble<- my_tibble%>%add_row(model=model_name,forecast_date=my_forecast_date, location=my_location, horizon=n_weeks_ahead,
                                       temporal_resolution=my_temporal_resolution, target_variable=my_target_variable, target_end_date=my_target_end_date, type= "point", quantile=NA,
-                                      value = expm1(list_all_pred_quantiles[[1]][[predicted_date_]]$point_forecast[1])) # exponentiating the predictions back
+                                      value = exp(list_all_pred_quantiles[[1]][[predicted_date_]]$point_forecast[1])) # exponentiating the predictions back
       
       # Add rows with predictive_quantiles to the tibble as quantiles      
       for(quantile_level in list_all_pred_quantiles[[single_quantile]][predicted_date_]){
-        my_quantile_value<-expm1(quantile_level$quantile) # exponentiating the predictions back
+        my_quantile_value<-exp(quantile_level$quantile) # exponentiating the predictions back
         my_tibble<-my_tibble%>%add_row(model=model_name,forecast_date=my_forecast_date, location=my_location, horizon=n_weeks_ahead,
                                        temporal_resolution=my_temporal_resolution, target_variable=my_target_variable, target_end_date=my_target_end_date, type= "quantile",
                                        quantile=quantile_level$pi_level, value = my_quantile_value)
