@@ -70,7 +70,7 @@ ES_ADJACENT<-function(current_state_tb, auto=FALSE, n_weeks_ahead=1, week_lag=1,
   all_cases<-data.frame(current_state_tb$cases, as.Date(current_state_tb$target_end_date)) # Get flu cases from current state
   colnames(all_cases)<-c("cases","Dates")
   # Format forecasts and dates #
-  all_forecasts<-data.frame(expm1(list_all_pred[[1]]$Prediction), as.Date(list_all_pred[[1]]$predicted_date)) # Get ensembled forecast from current state
+  all_forecasts<-data.frame(exp(list_all_pred[[1]]$Prediction), as.Date(list_all_pred[[1]]$predicted_date)) # Get ensembled forecast from current state
   colnames(all_forecasts)<-c("forecasts","Dates")
   # Join flu cases and forecasts #
   forecasts_and_cases<-inner_join(all_forecasts,all_cases, by="Dates") # Join cases and forecasts
@@ -91,7 +91,7 @@ ES_ADJACENT<-function(current_state_tb, auto=FALSE, n_weeks_ahead=1, week_lag=1,
     # Extract the date (name of the data frame) and the quantiles
     date <- names(list_all_pred_quantiles[[1]][i])
     quantiles <- t(list_all_pred_quantiles[[1]][[i]][2])
-    quantiles<-expm1(quantiles)
+    quantiles<-exp(quantiles)
     # Create a temporary data frame with the quantiles and date
     temp_df <- data.frame(date = date, quantiles)
     # Bind the temporary data frame to the final data frame
@@ -385,42 +385,6 @@ ROLLING_ARIMAX_ADJACENT <- function(current_state_tb, week_lag=week_lag, n_weeks
   return(list("Point_ForeCast "=prediction, "Quantiles"=prediction_quantile, "Number_of_models"=df_N_of_models))
 }
 
-#' combining_states_data
-#'
-#' This function organizes the ILI dataset into a list of tibbles. Each tibble is a different U.S. state.
-#' It also get the dates based on the year and epidemiological week.
-#' 
-#' @param ILI_data A ILI dataset from ILInet.
-#' @param states_codes A dataset with codes and names which selects the U.S. states in a given order.
-#' 
-#' @return A list containing the forecast, predictive quantiles and number of models in each ensemble.
-#'
-
-combining_states_data<-function(ILI_data=NULL, state_codes=NULL){
-  
-  # select only the STATE, YEAR, EPI_WEEK, ILITOTAL columns from ILI data
-  ILI_data = subset(ILI_data, select = c(STATE,YEAR,EPI_WEEK,ILITOTAL))
-  # add a column with weekly dates
-  ILI_data<-cbind(ILI_data, MMWRweek2Date(MMWRyear=ILI_data$YEAR, MMWRweek=ILI_data$EPI_WEEK))
-  # select only location and location_name from state_codes
-  state_codes = subset(state_codes, select = c(location,location_name))
-  names(state_codes)<- c('STATE_NUMBER','STATE')
-  
-  # Joining datasets
-  combined_data <- ILI_data %>%
-    left_join(state_codes, by = "STATE")
-  
-  # Renaming, organizing variables types and removing NANs
-  names(combined_data)<- c('state_name','MMWRyear','MMWRweek','cases','target_end_date','location')
-  combined_data$location<-as.numeric(combined_data$location)
-  combined_data$cases<-suppressWarnings(as.numeric(combined_data$cases))
-  combined_data$target_end_date = as.Date(combined_data$target_end_date,format = "%Y/%m/%d")
-  combined_data<-drop_na(combined_data)
-  
-  # split into different states
-  states_data <-combined_data %>% group_split(location)
-  return(states_data)
-}
 
 #' FormatForWIS
 #'
@@ -460,11 +424,11 @@ FormatForWIS <- function(list_all_pred_quantiles, current_state_tb, model_name, 
       # Add rows with predictions to the tibble as point_forecast
       my_tibble<- my_tibble%>%add_row(model=model_name,forecast_date=my_forecast_date, location=my_location, horizon=n_weeks_ahead,
                                       temporal_resolution=my_temporal_resolution, target_variable=my_target_variable, target_end_date=my_target_end_date, type= "point", quantile=NA,
-                                      value = expm1(list_all_pred_quantiles[[1]][[predicted_date_]]$point_forecast[1])) # exponentiating the predictions back
+                                      value = exp(list_all_pred_quantiles[[1]][[predicted_date_]]$point_forecast[1])) # exponentiating the predictions back
       
       # Add rows with predictive_quantiles to the tibble as quantiles      
       for(quantile_level in list_all_pred_quantiles[[single_quantile]][predicted_date_]){
-        my_quantile_value<-expm1(quantile_level$quantile) # exponentiating the predictions back
+        my_quantile_value<-exp(quantile_level$quantile) # exponentiating the predictions back
         my_tibble<-my_tibble%>%add_row(model=model_name,forecast_date=my_forecast_date, location=my_location, horizon=n_weeks_ahead,
                                        temporal_resolution=my_temporal_resolution, target_variable=my_target_variable, target_end_date=my_target_end_date, type= "quantile",
                                        quantile=quantile_level$pi_level, value = my_quantile_value)
