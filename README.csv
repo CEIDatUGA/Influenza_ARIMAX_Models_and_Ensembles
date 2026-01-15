@@ -1,26 +1,26 @@
 #######################################################################
 
-This repository has 24 ARIMA and ARIMAX models which forecasts short-term 
+This repository have 24 ARIMA and ARIMAX models which forecast short-term 
 influenza-related hospitalizations in 48 states of the contiguous U.S. 
 It also includes a CDC FluSight baseline model adapted to our work.
 
-########################################################################
+####
 
 Our main folder has a Rmakdown that generates images and analysis for our 24 models:
-manuscript_results.Rmd
+"manuscript_results.Rmd"
 
 It also has a Rmarkdown which generates images and analysis comparing the models and the FLuSight baseline.
-flusight_comparison.Rmd
+"flusight_comparison.Rmd"
 
 #########################################################################
 There are 4 subfolders in our main folder: 
 
-ERA5 data: which has the code for treating the temperature and humidity data which we later use in some of our models and analysis.
-models_with_logback: which has the models that use log-back transformations.  
-models_without_logback: which has the models that do not use log-back transformations.
-Flusight-baseline-adapted: which has the CDC FluSight baseline which we adapted to our work.
+"ERA5 data": which has the code for treating the temperature and humidity data which we later use in some of our models and analysis.
+"models_with_logback": which has the models that use log-back transformations.  
+"models_without_logback": which has the models that do not use log-back transformations.
+"Flusight-baseline-adapted": which has the CDC FluSight baseline which we adapted to our work.
 
-##########################################################################
+######
 
 In each of our models folders we have a Rmakrdown which process the NHSH hospitalizations dataset to a format that we can use. 
 We also have a few additional datasets which we used for modeling or analysis (shapefiles and regression_features), 
