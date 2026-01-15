@@ -7,18 +7,17 @@ It also includes a CDC FluSight baseline model adapted to our work.
 ####
 
 Our main folder has a Rmakdown that generates images and analysis for our 24 models:
-"manuscript_results.Rmd"
-
+manuscript_results.Rmd
 It also has a Rmarkdown which generates images and analysis comparing the models and the FLuSight baseline.
-"flusight_comparison.Rmd"
+flusight_comparison.Rmd
 
 #########################################################################
 There are 4 subfolders in our main folder: 
 
-"ERA5 data": which has the code for treating the temperature and humidity data which we later use in some of our models and analysis.
-"models_with_logback": which has the models that use log-back transformations.  
-"models_without_logback": which has the models that do not use log-back transformations.
-"Flusight-baseline-adapted": which has the CDC FluSight baseline which we adapted to our work.
+ERA5 data: which has the code for treating the temperature and humidity data which we later use in some of our models and analysis.
+models_with_logback: which has the models that use log-back transformations.  
+models_without_logback: which has the models that do not use log-back transformations.
+Flusight-baseline-adapted: which has the CDC FluSight baseline which we adapted to our work.
 
 ######
 
@@ -39,8 +38,8 @@ ES_AVERAGE: Ensembles and single best ARIMAX models with 1-week-lag using averag
 Each model family subfolder have the results of 3 model types: AUTO, ES27 and ES64. 
 AUTO is a non-ensemble model which uses the best automatic fitting model. 
 The other 2 model types are ensembles which combine 27 or 64 ARIMA or ARIMAX models. 
-These results are loaded and evaluated in the "manuscript_results.Rmd" file,
-and on the "flusight_comparison.Rmd" file.
+These results are loaded and evaluated in the manuscript_results.Rmd file,
+and on the flusight_comparison.Rmd file.
 
 ###########################################################################
 
