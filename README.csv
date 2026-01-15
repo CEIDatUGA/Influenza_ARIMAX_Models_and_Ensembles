@@ -26,7 +26,7 @@ In each of our models folders we have a Rmakrdown which process the NHSH hospita
 We also have a few additional datasets which we used for modeling or analysis (shapefiles and regression_features), 
 which we decriped on our methods section.
 
-Morover, on each of our models folders we have 5 major model families on subfolder: 
+Moreover, on each of our models folders we have 5 major model families each on a different subfolder.
 
 ES_ARIMA: Ensembles and single best ARIMA models. 
 ES_TEMPERATURE: Ensembles and single best ARIMAX models using 1-week-lag mean state temperature as covariate.
