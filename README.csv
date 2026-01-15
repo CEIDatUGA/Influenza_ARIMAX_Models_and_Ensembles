@@ -6,36 +6,42 @@ It also includes a CDC FluSight baseline model adapted to our dataset.
 
 ########################################################################
 
-Our main folder has a Rmakdown (manuscript_results) that generates images and analysis for our 24 models.
+Our main folder has a Rmakdown that generates images and analysis for our 24 models:
+manuscript_results.Rmd
+
+It also has a Rmarkdown which generates images and analysis comparing the models and the FLuSight baseline.
+flusight_comparison.Rmd
 
 #########################################################################
-There are 3 subfolders in our main folder: 
+There are 4 subfolders in our main folder: 
 
-ERA5 data (which has the code for treating the temperature and humidity data which we later use in some of our models and analysis)
-models_with_logback (which has the models that use log-back transformations)  
-models_without_logback (which has the models that do not use log-back transformations) 
+ERA5 data: which has the code for treating the temperature and humidity data which we later use in some of our models and analysis.
+models_with_logback: which has the models that use log-back transformations.  
+models_without_logback: which has the models that do not use log-back transformations.
+Flusight-baseline-adapted: which has the CDC FluSight baseline which we adapted to our work.
 
 ##########################################################################
-In each hospitalization models' subfolder we have 5 major model families each in a given folder: 
+
+In each of our models folders we have a Rmakrdown which process the NHSH hospitalizations dataset to a format that we can use. 
+We also have a few additional datasets which we used for modeling or analysis (shapefiles and regression_features), 
+which we decriped on our methods section.
+
+Morover, on each of our models folders we have 5 major model families on subfolder: 
 
 ES_ARIMA: Ensembles and single best ARIMA models. 
-
 ES_TEMPERATURE: Ensembles and single best ARIMAX models using 1-week-lag mean state temperature as covariate.
-
 ES_EPIWEEK: Ensembles and single best ARIMAX models using 1-week-lag mean cases by epidemiological week for the as covariate. Value calculated for the previous 2 years.
-
 ES_ADJACENT: Ensembles and single best ARIMAX models with 1-week-lag using mean hospitalizations in adjacent states as covariate.
-
 ES_AVERAGE: Ensembles and single best ARIMAX models with 1-week-lag using average of hospitalizations across the U.S as covariate.
 
-###
+#########
 
-Each model family include results of 3 model types: AUTO, ES27 and ES64. AUTO is a non-ensemble model which uses the best automatic fitting model. The other 2 model types are ensembles which combine 27 or 64 ARIMA or ARIMAX models. These are loaded and evaluated in the "manuscript_results.Rmd" file.
+Each model family subfolder have the results of 3 model types: AUTO, ES27 and ES64. 
+AUTO is a non-ensemble model which uses the best automatic fitting model. 
+The other 2 model types are ensembles which combine 27 or 64 ARIMA or ARIMAX models. 
+These results are loaded and evaluated in the "manuscript_results.Rmd" file,
+and on the "flusight_comparison.Rmd" file.
 
 ###########################################################################
 
-Each folder also includes a Rmakrdown which process the NHSH hospitalizations dataset and a few additional datasets which we used for modeling or analysis (shapefiles and regression_features).
-
-###########################################################################
-
-[updated] 11Nov2025
+[updated] 15Jan2026
