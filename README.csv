@@ -1,8 +1,8 @@
 #######################################################################
 
-This repository has 24 ARIMA and ARIMAX models which forecasts Influenza Hospitalizations in 48 states of the U.S. 
-
-It also includes a CDC FluSight baseline model adapted to our dataset.
+This repository has 24 ARIMA and ARIMAX models which forecasts short-term 
+influenza-related hospitalizations in 48 states of the contiguous U.S. 
+It also includes a CDC FluSight baseline model adapted to our work.
 
 ########################################################################
 
