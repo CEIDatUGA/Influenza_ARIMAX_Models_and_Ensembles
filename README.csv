@@ -14,10 +14,10 @@ flusight_comparison.Rmd
 #########################################################################
 There are 4 subfolders in our main folder: 
 
-ERA5 data: which has the code for treating the temperature and humidity data which we later use in some of our models and analysis.
-models_with_logback: which has the models that use log-back transformations.  
-models_without_logback: which has the models that do not use log-back transformations.
-Flusight-baseline-adapted: which has the CDC FluSight baseline which we adapted to our work.
+ERA5 data (which has the code for treating the temperature and humidity data which we later use in some of our models and analysis.)
+models_with_logback (which has the models that use log-back transformations.)
+models_without_logback (which has the models that do not use log-back transformations.)
+Flusight-baseline-adapted (which has the CDC FluSight baseline which we adapted to our work.)
 
 ######
 
