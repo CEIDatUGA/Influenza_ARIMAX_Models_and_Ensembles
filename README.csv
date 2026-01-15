@@ -38,7 +38,7 @@ ES_AVERAGE/ Ensembles and single best ARIMAX models with 1-week-lag using averag
 Each model family subfolder have the results of 3 model types (AUTO, ES27 and ES64) 
 AUTO is a non-ensemble model which uses the best automatic fitting model. 
 The other 2 model types are ensembles which combine 27 or 64 ARIMA or ARIMAX models. 
-These results are loaded and evaluated in the manuscript_results.Rmd file,
+These results are loaded and evaluated in the manuscript_results.Rmd file
 and on the flusight_comparison.Rmd file.
 
 ###########################################################################
