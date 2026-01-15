@@ -21,7 +21,7 @@ Flusight-baseline-adapted/ (which has the CDC FluSight baseline which we adapted
 
 ######
 
-In each of our models folders we have a Rmakrdown which process the NHSH hospitalizations dataset to a format that we can use. 
+In each of our models folders we have a Rmarkdown which process the NHSH hospitalizations dataset to a format that we can use (flu_hospitalization_dataset.Rmd). 
 We also have a few additional datasets which we used for modeling or analysis (shapefiles and regression_features) 
 which we decriped on our methods section.
 
